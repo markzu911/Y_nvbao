@@ -1,0 +1,6 @@
+{
+  "name": "女包电商图生成器",
+  "description": "上传您的包包图片，自动生成专业模特背包图及细节展示图，支持多种背景和分辨率。",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
