@@ -56,7 +56,7 @@ app.post("/api/gemini", async (req, res) => {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
     }
 
-    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1' });
+    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
     const response = await ai.models.generateContent({
       model,
       ...payload
