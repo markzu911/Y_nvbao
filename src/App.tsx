@@ -250,7 +250,7 @@ export default function App() {
       };
 
       const [analysisResult, refAnalysisResult] = await Promise.all([
-        generateContent("gemini-1.5-flash", {
+        generateContent("gemini-3.1-flash-image-preview", {
           contents: [
             { parts: [
               { inlineData: { data: base64Image, mimeType: file.type } },
@@ -258,7 +258,7 @@ export default function App() {
             ]}
           ]
         }),
-        (mode === 'inspired' && base64Ref) ? generateContent("gemini-1.5-flash", {
+        (mode === 'inspired' && base64Ref) ? generateContent("gemini-3.1-flash-image-preview", {
           contents: [
             { parts: [
               { inlineData: { data: base64Ref, mimeType: refFile!.type } },
@@ -328,7 +328,7 @@ export default function App() {
           contentParts.push({ inlineData: { data: base64Ref, mimeType: refFile!.type } });
         }
 
-        const response = await generateContent('gemini-1.5-flash-8b', {
+        const response = await generateContent('gemini-3.1-flash-image-preview', {
           contents: [
             {
               role: 'user',
