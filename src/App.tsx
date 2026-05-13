@@ -406,8 +406,8 @@ export default function App() {
             <Camera className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-[15px] font-black tracking-tighter text-indigo-950 uppercase">Luxe Studio</span>
-            <span className="text-[9px] font-bold text-indigo-400 tracking-[0.2em] uppercase">AI Render Engine</span>
+            <span className="text-[15px] font-black tracking-tighter text-indigo-950 uppercase">奢华影棚</span>
+            <span className="text-[9px] font-bold text-indigo-400 tracking-[0.2em] uppercase">AI 渲染引擎</span>
           </div>
         </div>
         
@@ -415,8 +415,8 @@ export default function App() {
           {userIntegral !== undefined && (
             <div className="flex items-center gap-3 px-4 py-2 bg-indigo-50 rounded-xl border border-indigo-100">
                <div className="flex flex-col items-end">
-                 <span className="text-[10px] font-black text-indigo-900 leading-none">{userIntegral}</span>
-                 <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">积分余额 / Integral</span>
+                <span className="text-[10px] font-black text-indigo-900 leading-none">{userIntegral}</span>
+                 <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">积分余额</span>
                </div>
                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-100">
                  <Zap className="w-4 h-4 text-white fill-current" />
@@ -432,7 +432,7 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-[11px] font-black text-zinc-900 leading-none">{userInfo.name}</span>
-                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter">{userInfo.enterprise || 'Enterprise'}</span>
+                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter">{userInfo.enterprise || '企业用户'}</span>
               </div>
             </div>
           )}
@@ -482,9 +482,9 @@ export default function App() {
             <section>
               <div className="flex flex-col gap-2">
                 {[
-                  { id: 'model', name: '人像模特', desc: 'Portrait Photography' }, 
-                  { id: 'still', name: '商业静物', desc: 'Still Life Product' },
-                  { id: 'inspired', name: '灵感参考', desc: 'Style Injection' }
+                  { id: 'model', name: '人像模特', desc: '模特拍摄' }, 
+                  { id: 'still', name: '商业静物', desc: '产品静物' },
+                  { id: 'inspired', name: '灵感参考', desc: '风格注入' }
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -574,7 +574,7 @@ export default function App() {
                 <motion.div key="i" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="pt-4">
                   <div className="p-5 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl">
                     <p className="text-[10px] text-zinc-400 font-bold leading-relaxed tracking-wide">
-                      STYLE INJECTION: AI will extract visual DNA (lighting, texture, geometry) from your reference and merge it with the target product.
+                      风格注入：AI 将从您的参考图中提取视觉基因（光影、质感、几何），并将其与目标产品融合。
                     </p>
                   </div>
                 </motion.div>
@@ -596,12 +596,12 @@ export default function App() {
                 {isGenerating ? (
                   <>
                     <RefreshCcw className="w-4 h-4 animate-spin" />
-                    <span>Processing Render</span>
+                    <span>正在渲染生成</span>
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 fill-current" />
-                    <span>Generate Masterpiece</span>
+                    <span>立即开始创作</span>
                   </>
                 )}
               </div>
@@ -638,7 +638,7 @@ export default function App() {
                      <Upload className="w-8 h-8 text-zinc-300 group-hover:text-white" />
                    </div>
                    <span className="text-[14px] font-black text-zinc-900 mb-1 tracking-wider uppercase">主产品图片</span>
-                   <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase">Upload Hero Product</p>
+                   <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase">上传主产品图</p>
                  </>
                )}
                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
@@ -669,9 +669,9 @@ export default function App() {
                    <div className="w-20 h-20 bg-zinc-50 rounded-[32px] flex items-center justify-center mb-6">
                      {mode === 'inspired' ? <ImageIcon className="w-8 h-8 text-zinc-300" /> : <Lock className="w-6 h-6 text-zinc-200" />}
                    </div>
-                   <span className="text-[14px] font-black text-zinc-900 mb-1 tracking-wider uppercase">灵感参考</span>
+                    <span className="text-[14px] font-black text-zinc-900 mb-1 tracking-wider uppercase">灵感参考</span>
                    <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase pl-1">
-                     {mode === 'inspired' ? 'Inject Reference DNA' : 'Inactive in current mode'}
+                     {mode === 'inspired' ? '注入设计基因' : '当前模式下不可用'}
                    </p>
                  </>
                )}
@@ -686,14 +686,14 @@ export default function App() {
                 {isGenerating && (
                    <div className="flex items-center gap-2 px-4 py-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-200">
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
-                      <span className="text-[9px] text-white font-black tracking-widest uppercase">Processing</span>
+                      <span className="text-[9px] text-white font-black tracking-widest uppercase">处理中</span>
                    </div>
                 )}
               </div>
               {results.length > 0 && (
                  <button onClick={downloadAll} className="px-6 py-3 bg-white text-zinc-900 text-[10px] font-black tracking-[0.2em] uppercase rounded-full shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-3">
                    <Download className="w-4 h-4" />
-                   Save Gallery
+                   保存全部
                  </button>
               )}
             </div>
@@ -712,7 +712,7 @@ export default function App() {
                           <ResultCard 
                             key="hero-result"
                             img={results[0]} 
-                            label="HERO SHOT" 
+                            label="主体渲染" 
                             footerLabel="主渲染全景视角" 
                             onPreview={() => setSelectedImage(results[0])} 
                             onDownload={() => handleDownload(results[0].url, 'render-hero.png')} 
@@ -721,7 +721,7 @@ export default function App() {
                         ) : (
                           <LoadingCard 
                             key="hero-loading"
-                            label={step === 1 ? "Vision Analysis" : "Generating Masterpiece"} 
+                            label={step === 1 ? "视觉分析中" : "正在生成杰作"} 
                             loading={isGenerating && results.length < 1} 
                             activeStep={step}
                           />
@@ -740,7 +740,7 @@ export default function App() {
                             <ResultCard 
                               key="detail-result"
                               img={results[1]} 
-                              label="DETAIL VIEW" 
+                              label="细节展示" 
                               footerLabel="氛围细节视角" 
                               onPreview={() => setSelectedImage(results[1])} 
                               onDownload={() => handleDownload(results[1].url, 'render-detail.png')} 
@@ -749,7 +749,7 @@ export default function App() {
                           ) : (
                             <LoadingCard 
                               key="detail-loading"
-                              label={step === 1 ? "Scene Pre-fetch" : "Crafting Atmosphere"} 
+                              label={step === 1 ? "场景预取" : "正在营造氛围"} 
                               loading={isGenerating && results.length < 2} 
                               activeStep={step}
                             />
@@ -766,8 +766,8 @@ export default function App() {
             {history.length > 0 && (
               <div className="mt-32 pt-16 border-t border-zinc-200/50">
                 <div className="flex justify-between items-center mb-10">
-                  <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-zinc-300">历史回顾 / Archive</h3>
-                  <button onClick={() => setHistory([])} className="text-[9px] uppercase tracking-widest text-zinc-400 hover:text-black transition-colors font-black">Clear Archive</button>
+                  <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-zinc-300">历史回顾</h3>
+                  <button onClick={() => setHistory([])} className="text-[9px] uppercase tracking-widest text-zinc-400 hover:text-black transition-colors font-black">清空历史</button>
                 </div>
                 <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
                   {history.map((img) => (
@@ -789,7 +789,7 @@ export default function App() {
                 <div className="w-40 h-40 border-2 border-black rounded-full flex items-center justify-center mb-8">
                   <Camera className="w-12 h-12" />
                 </div>
-                <p className="text-[11px] tracking-[0.8em] uppercase font-black text-black">Ready for Capture</p>
+                <p className="text-[11px] tracking-[0.8em] uppercase font-black text-black">准备就绪</p>
               </div>
             )}
           </section>
@@ -808,7 +808,7 @@ export default function App() {
               <AlertCircle className="w-6 h-6 text-red-500 shrink-0" />
               <div>
                 <p className="text-[12px] font-bold leading-relaxed tracking-wide">{error}</p>
-                <button onClick={() => setError(null)} className="mt-4 text-[9px] uppercase tracking-[0.2em] font-black underline opacity-40 hover:opacity-100 transition-opacity">Dismiss</button>
+                <button onClick={() => setError(null)} className="mt-4 text-[9px] uppercase tracking-[0.2em] font-black underline opacity-40 hover:opacity-100 transition-opacity">关闭</button>
               </div>
             </div>
           </motion.div>
@@ -818,9 +818,9 @@ export default function App() {
       <footer className="h-12 px-10 border-t border-zinc-100 flex items-center justify-between text-[9px] uppercase tracking-[0.3em] font-black text-zinc-300 shrink-0 bg-white">
         <div className="flex items-center gap-4">
           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-          Engine Synchronized
+          引擎已同步
         </div>
-        <div className="opacity-40">System Release v3.1</div>
+        <div className="opacity-40">系统版本 v3.1</div>
       </footer>
 
       {/* Image Preview Modal */}
@@ -860,7 +860,7 @@ export default function App() {
                   className="flex items-center gap-4 px-10 py-5 bg-white text-black text-[11px] uppercase tracking-[0.3em] font-black hover:bg-black hover:text-white transition-all shadow-2xl active:scale-95"
                 >
                   <Download className="w-5 h-5" />
-                  Save Master File
+                  保存高清文件
                 </button>
               </div>
             </motion.div>
@@ -980,7 +980,7 @@ function LoadingCard({ label, loading, activeStep }: { label: string, loading: b
             <div className="flex flex-col gap-1">
               <p className="text-[14px] font-black text-zinc-900 tracking-[0.3em] uppercase">{label}</p>
               <p className="text-[9px] text-zinc-400 font-bold tracking-widest uppercase">
-                {activeStep === 1 ? "Mapping Vector Coordinates" : "Synthesizing Light Fields"}
+                {activeStep === 1 ? "正在映射特征坐标" : "正在合成光影特征"}
               </p>
             </div>
             
