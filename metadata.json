@@ -1,6 +1,6 @@
 {
-  "name": "极物主理 - AI 女包电商渲染器",
-  "description": "专为女包电商设计，支持人像模特合成与商业静物渲染。基于 AI 视觉基因提取技术，一键生成高品质电商场景大图。",
+  "name": "女包电商图生成器",
+  "description": "上传您的包包图片，自动生成专业模特背包图及细节展示图，支持多种背景和分辨率。",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

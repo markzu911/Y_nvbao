@@ -24,6 +24,14 @@ import {
 
 import { motion, AnimatePresence } from 'motion/react';
 
+// API Configuration for SaaS
+const SAAS_API = {
+  launch: '/api/tool/launch',
+  verify: '/api/tool/verify',
+  consume: '/api/tool/consume',
+  upload: '/api/upload/image',
+};
+
 // Constants
 const BACKGROUNDS = [
   { id: 'city_street', name: '城市街道', icon: <Building2 className="w-5 h-5" />, prompt: 'luxury city street with modern architecture, shallow depth of field' },
@@ -85,49 +93,53 @@ export default function App() {
   const [step, setStep] = useState(1); // 1: Analysis, 2: Generation
   const [description, setDescription] = useState<string>("");
 
-  const [integral, setIntegral] = useState<number | null>(null);
+  // SaaS States
   const [userId, setUserId] = useState<string | null>(null);
   const [toolId, setToolId] = useState<string | null>(null);
+  const [userIntegral, setUserIntegral] = useState<number>(0);
+  const [userInfo, setUserInfo] = useState<{ name?: string; enterprise?: string } | null>(null);
+
+  // Listen for SAAS_INIT from parent window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SAAS_INIT') {
+        const { userId: uid, toolId: tid } = event.data;
+        if (uid && tid) {
+          setUserId(uid);
+          setToolId(tid);
+          initSaaS(uid, tid);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    
+    // Also try to check session storage/URL for initial load if needed, 
+    // but postMessage is the recommended way here.
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const initSaaS = async (uid: string, tid: string) => {
+    try {
+      const response = await fetch(SAAS_API.launch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: uid, toolId: tid })
+      });
+      const result = await response.json();
+      if (result.success) {
+        setUserIntegral(result.data.user.integral);
+        setUserInfo(result.data.user);
+      }
+    } catch (err) {
+      console.error('SaaS Launch Error:', err);
+    }
+  };
 
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refPreviewUrl, setRefPreviewUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refFileInputRef = useRef<HTMLInputElement>(null);
-
-  // SaaS Integration: Listen for init message
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SAAS_INIT') {
-        const { userId: uId, toolId: tId } = event.data;
-        if (uId && tId) {
-          setUserId(uId);
-          setToolId(tId);
-          fetchLaunchData(uId, tId);
-        }
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const fetchLaunchData = async (uId: string, tId: string) => {
-    try {
-      const res = await fetch("/api/tool/launch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: uId, toolId: tId }),
-      });
-      const text = await res.text();
-      if (!text) return;
-      const json = JSON.parse(text);
-      if (json.success) {
-        setIntegral(json.data?.user?.integral);
-      }
-    } catch (err) {
-      console.error("Launch fetch failed", err);
-    }
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -182,93 +194,6 @@ export default function App() {
     });
   };
 
-  const callGemini = async (model: string, contents: any[], config?: any) => {
-    const res = await fetch("/api/gemini", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, contents, config }),
-    });
-    
-    const text = await res.text();
-    if (!text) throw new Error("服务器返回空响应");
-    
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error("接口返回格式异常");
-    }
-
-    if (!res.ok) {
-      throw new Error(data.error || "生成失败，可能是环境过于复杂，请稍后重试");
-    }
-    return data;
-  };
-
-  const getResponseText = (data: any) => {
-    return data.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "";
-  };
-
-  const getResponseImage = (data: any) => {
-    return data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data || null;
-  };
-
-  const verifyCredits = async () => {
-    if (!userId || !toolId) return true; // Loose check if not in SAAS mode
-    try {
-      const res = await fetch("/api/tool/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, toolId }),
-      });
-      const text = await res.text();
-      if (!text) throw new Error("校验端口响应异常，请刷新页面");
-      const json = JSON.parse(text);
-      if (!json.success) {
-        throw new Error(json.message || "积分不足");
-      }
-      return true;
-    } catch (err: any) {
-      throw new Error(err.message || "校验积分失败");
-    }
-  };
-
-  const consumeCredits = async () => {
-    if (!userId || !toolId) return;
-    try {
-      const res = await fetch("/api/tool/consume", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, toolId }),
-      });
-      const text = await res.text();
-      if (!text) return;
-      const json = JSON.parse(text);
-      if (json.success) {
-        setIntegral(json.data?.currentIntegral);
-      }
-    } catch (err) {
-      console.error("Consume credits failed", err);
-    }
-  };
-
-  const uploadResultToSaaS = async (base64Data: string) => {
-    if (!userId) return;
-    try {
-      await fetch("/api/upload/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          base64: base64Data, // This is already prefaced with data:image/png;base64, or just raw base64 depending on how I handle it.
-          source: "result"
-        }),
-      });
-    } catch (err) {
-      console.error("Upload to SaaS failed", err);
-    }
-  };
-
   const generateAIImages = async () => {
     if (!file) {
       setError("请先上传包包图片以开始创作");
@@ -290,27 +215,61 @@ export default function App() {
     setResults([]);
 
     try {
-      // Step 2 from spec: Verify before work
-      await verifyCredits();
+      // 1. SaaS Verify Points
+      if (userId && toolId) {
+        const verifyRes = await fetch(SAAS_API.verify, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, toolId })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          setError(verifyData.message || "积分不足，无法开始生成");
+          setIsGenerating(false);
+          return;
+        }
+      }
 
       const base64Image = await fileToBase64(file);
       const base64Ref = refFile ? await fileToBase64(refFile) : null;
 
       // Step 1: Deep Analysis of the product to ensure 1:1 fidelity
       setStep(1);
-      const [analysisData, refAnalysisData] = await Promise.all([
-        callGemini("gemini-3-flash-preview", [
-          { inlineData: { data: base64Image, mimeType: file.type } },
-          { text: "Identity Analysis: Describe this bag with fanatical detail so a generator can clone it. 1. Precise Geometry (box height-width ratio, edge curvature); 2. Material DNA (exact texture, grain size, sheen level); 3. Hardware Signature (exact count and placement of rivets, shape of pulls); 4. Logo Typography and Scale. Output in English technical terms." }
-        ]),
-        (mode === 'inspired' && base64Ref) ? callGemini("gemini-3-flash-preview", [
-          { inlineData: { data: base64Ref, mimeType: refFile!.type } },
-          { text: "Detailed Visual Analysis: Analyze this reference image. Describe in one technical paragraph: 1. The Environment (architecture, lighting, color palette); 2. HUMAN ELEMENTS (If a person is present, specify their exact outfit, pose, orientation, and action); 3. Compositional layout. The goal is to replicate these elements exactly in a new generation." }
-        ]) : Promise.resolve(null)
+
+      const generateContent = async (model: string, payload: any) => {
+        const res = await fetch("/api/gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, payload }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Generation failed");
+        }
+        return res.json();
+      };
+
+      const [analysisResult, refAnalysisResult] = await Promise.all([
+        generateContent("gemini-1.5-flash", {
+          contents: [
+            { parts: [
+              { inlineData: { data: base64Image, mimeType: file.type } },
+              { text: "Identity Analysis: Describe this bag with fanatical detail so a generator can clone it. 1. Precise Geometry (box height-width ratio, edge curvature); 2. Material DNA (exact texture, grain size, sheen level); 3. Hardware Signature (exact count and placement of rivets, shape of pulls); 4. Logo Typography and Scale. Output in English technical terms." }
+            ]}
+          ]
+        }),
+        (mode === 'inspired' && base64Ref) ? generateContent("gemini-1.5-flash", {
+          contents: [
+            { parts: [
+              { inlineData: { data: base64Ref, mimeType: refFile!.type } },
+              { text: "Detailed Visual Analysis: Analyze this reference image. Describe in one technical paragraph: 1. The Environment (architecture, lighting, color palette); 2. HUMAN ELEMENTS (If a person is present, specify their exact outfit, pose, orientation, and action); 3. Compositional layout. The goal is to replicate these elements exactly in a new generation." }
+            ]}
+          ]
+        }) : Promise.resolve({ text: "" })
       ]);
 
-      const bagDescription = getResponseText(analysisData) || "a high-end luxury bag";
-      const sceneDescription = refAnalysisData ? getResponseText(refAnalysisData) : "";
+      const bagDescription = analysisResult.text || "a high-end luxury bag";
+      const sceneDescription = refAnalysisResult.text || "";
       setDescription(bagDescription);
 
       // Step 2: Generate 1 or 2 images
@@ -369,43 +328,66 @@ export default function App() {
           contentParts.push({ inlineData: { data: base64Ref, mimeType: refFile!.type } });
         }
 
-        const responseData = await callGemini('gemini-3.1-flash-image-preview', [
-          {
-            role: 'user',
-            parts: [
-              ...contentParts,
-              { text: `TASK: ${config.prompt}. STRICT: Match the product exactly.` }
-            ]
-          }
-        ], {
-          imageConfig: {
-            aspectRatio: ratio.id,
-            imageSize: resolution.id
+        const response = await generateContent('gemini-1.5-flash-8b', {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                ...contentParts,
+                { text: `TASK: ${config.prompt}. STRICT: Match the product exactly.` }
+              ]
+            }
+          ],
+          generationConfig: {
+            // @ts-ignore - backend specific config if needed, otherwise passes through
+            // Note: aspect ratio is usually model dependent in generateContent of some newer models
+            // but for standard models we might need a specific structure
           }
         });
 
-        const base64Result = getResponseImage(responseData);
-        if (base64Result) {
+        // The backend returns { candidates, text }
+        const imagePart = response.candidates?.[0]?.content?.parts.find((p: any) => p.inlineData);
+        if (imagePart?.inlineData) {
           newResults.push({
             id: `gen-${i}-${Date.now()}`,
-            url: `data:image/png;base64,${base64Result}`,
+            url: `data:image/png;base64,${imagePart.inlineData.data}`,
             title: config.title
           });
           setResults([...newResults]);
+
+          // SaaS Consume and Upload for each generated image
+          if (userId && toolId) {
+            try {
+              // Deduct points
+              const consumeRes = await fetch(SAAS_API.consume, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, toolId })
+              });
+              const consumeData = await consumeRes.json();
+              if (consumeData.success) {
+                setUserIntegral(consumeData.data.currentIntegral);
+              }
+
+              // Upload to record
+              await fetch(SAAS_API.upload, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId,
+                  source: 'result',
+                  base64: `data:image/png;base64,${imagePart.inlineData.data}`
+                })
+              });
+            } catch (saasErr) {
+              console.error('SaaS Operation Error:', saasErr);
+            }
+          }
         }
       }
 
       if (newResults.length === 0) {
         throw new Error("生成失败，请检查网络或重试");
-      }
-
-      // Step 3 from spec: Consume after success
-      // If we reach here, at least one image was generated successfully
-      await consumeCredits();
-
-      // Upload results to SaaS for archival/gallery feature
-      for (const res of newResults) {
-        await uploadResultToSaaS(res.url);
       }
 
     } catch (err: any) {
@@ -424,22 +406,36 @@ export default function App() {
             <Camera className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-[16px] font-black tracking-tighter text-indigo-950 uppercase">女包电商图生成器</span>
-            <span className="text-[11px] font-bold text-indigo-400 tracking-[0.2em] uppercase">AI 渲染引擎</span>
+            <span className="text-[15px] font-black tracking-tighter text-indigo-950 uppercase">Luxe Studio</span>
+            <span className="text-[9px] font-bold text-indigo-400 tracking-[0.2em] uppercase">AI Render Engine</span>
           </div>
         </div>
         
         <div className="flex items-center gap-6">
-          {integral !== null && (
-            <div className="flex items-center gap-3 px-5 py-2 bg-indigo-50 rounded-2xl border border-indigo-100 shadow-sm">
-              <Zap className="w-4 h-4 text-indigo-600 fill-current" />
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[16px] font-black text-indigo-950">{integral}</span>
-                <span className="text-[11px] font-bold text-indigo-400 tracking-wider uppercase">积分余额</span>
+          {userIntegral !== undefined && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-indigo-50 rounded-xl border border-indigo-100">
+               <div className="flex flex-col items-end">
+                 <span className="text-[10px] font-black text-indigo-900 leading-none">{userIntegral}</span>
+                 <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">积分余额 / Integral</span>
+               </div>
+               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-100">
+                 <Zap className="w-4 h-4 text-white fill-current" />
+               </div>
+            </div>
+          )}
+          {userInfo?.name && (
+            <div className="hidden md:flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full border-2 border-indigo-100 p-0.5">
+                <div className="w-full h-full bg-zinc-100 rounded-full flex items-center justify-center text-indigo-600 font-black text-xs">
+                  {userInfo.name.charAt(0)}
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-black text-zinc-900 leading-none">{userInfo.name}</span>
+                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-tighter">{userInfo.enterprise || 'Enterprise'}</span>
               </div>
             </div>
           )}
-          {/* Navigation removed for cleaner UI */}
         </div>
       </header>
 
@@ -453,7 +449,7 @@ export default function App() {
                   <button
                     key={res.id}
                     onClick={() => setResolution(res)}
-                    className={`py-3 text-[12px] font-black rounded-xl border-2 transition-all duration-300 ${
+                    className={`py-3 text-[10px] font-black rounded-xl border-2 transition-all duration-300 ${
                       resolution.id === res.id 
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl shadow-indigo-200' 
                       : 'bg-white border-zinc-50 text-zinc-400 hover:border-indigo-100'
@@ -471,7 +467,7 @@ export default function App() {
                   <button
                     key={r.id}
                     onClick={() => setRatio(r)}
-                    className={`py-3 text-[12px] font-black rounded-xl border-2 transition-all duration-300 ${
+                    className={`py-3 text-[10px] font-black rounded-xl border-2 transition-all duration-300 ${
                       ratio.id === r.id 
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl shadow-indigo-200' 
                       : 'bg-white border-zinc-50 text-zinc-400 hover:border-indigo-100'
@@ -486,9 +482,9 @@ export default function App() {
             <section>
               <div className="flex flex-col gap-2">
                 {[
-                  { id: 'model', name: '人像模特', desc: '人像摄影' }, 
-                  { id: 'still', name: '商业静物', desc: '商业静物' },
-                  { id: 'inspired', name: '灵感参考', desc: '风格提取' }
+                  { id: 'model', name: '人像模特', desc: 'Portrait Photography' }, 
+                  { id: 'still', name: '商业静物', desc: 'Still Life Product' },
+                  { id: 'inspired', name: '灵感参考', desc: 'Style Injection' }
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -503,8 +499,8 @@ export default function App() {
                     }`}
                   >
                     <div className="relative z-10">
-                      <p className="text-[14px] font-black tracking-wider uppercase mb-0.5">{m.name}</p>
-                      <p className={`text-[12px] font-bold tracking-widest uppercase ${mode === m.id ? 'text-indigo-200' : 'text-zinc-300'}`}>{m.desc}</p>
+                      <p className="text-[11px] font-black tracking-wider uppercase mb-0.5">{m.name}</p>
+                      <p className={`text-[9px] font-bold tracking-widest uppercase ${mode === m.id ? 'text-indigo-200' : 'text-zinc-300'}`}>{m.desc}</p>
                     </div>
                   </button>
                 ))}
@@ -520,7 +516,7 @@ export default function App() {
                         <button
                           key={bg.id}
                           onClick={() => setBackground(bg)}
-                          className={`py-3 px-4 text-[12px] font-black rounded-xl border-2 transition-all duration-300 truncate text-left tracking-widest uppercase ${
+                          className={`py-3 px-4 text-[9px] font-black rounded-xl border-2 transition-all duration-300 truncate text-left tracking-widest uppercase ${
                             background.id === bg.id 
                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' 
                             : 'bg-white border-zinc-50 text-zinc-400 hover:border-indigo-100'
@@ -538,7 +534,7 @@ export default function App() {
                         <button
                           key={a.id}
                           onClick={() => setAge(a)}
-                          className={`py-3 text-[12px] font-black rounded-xl border-2 transition-all duration-300 tracking-widest uppercase ${
+                          className={`py-3 text-[9px] font-black rounded-xl border-2 transition-all duration-300 tracking-widest uppercase ${
                             age.id === a.id 
                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' 
                             : 'bg-white border-zinc-50 text-zinc-400 hover:border-indigo-100'
@@ -560,7 +556,7 @@ export default function App() {
                         <button
                           key={style.id}
                           onClick={() => setStillLifeStyle(style)}
-                          className={`py-3 px-4 text-[12px] font-black rounded-xl border-2 transition-all duration-300 text-left tracking-widest uppercase ${
+                          className={`py-3 px-4 text-[9px] font-black rounded-xl border-2 transition-all duration-300 text-left tracking-widest uppercase ${
                             stillLifeStyle.id === style.id 
                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' 
                             : 'bg-zinc-50/50 border-zinc-50 text-zinc-400 hover:border-indigo-100'
@@ -577,8 +573,8 @@ export default function App() {
               {mode === 'inspired' && (
                 <motion.div key="i" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="pt-4">
                   <div className="p-5 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl">
-                    <p className="text-[12px] text-zinc-400 font-bold leading-relaxed tracking-wide">
-                      风格提取：AI 将从参考图中提取视觉基因（灯光、质感、几何），并将其与目标产品融合。
+                    <p className="text-[10px] text-zinc-400 font-bold leading-relaxed tracking-wide">
+                      STYLE INJECTION: AI will extract visual DNA (lighting, texture, geometry) from your reference and merge it with the target product.
                     </p>
                   </div>
                 </motion.div>
@@ -590,7 +586,7 @@ export default function App() {
             <button
               disabled={!file || isGenerating}
               onClick={generateAIImages}
-              className={`w-full py-5 text-[14px] font-black tracking-[0.2em] uppercase rounded-2xl transition-all duration-500 overflow-hidden relative shadow-2xl ${
+              className={`w-full py-5 text-[11px] font-black tracking-[0.2em] uppercase rounded-2xl transition-all duration-500 overflow-hidden relative shadow-2xl ${
                 !file || isGenerating 
                 ? 'bg-zinc-100 text-zinc-300 cursor-not-allowed' 
                 : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 active:scale-[0.98]'
@@ -600,12 +596,12 @@ export default function App() {
                 {isGenerating ? (
                   <>
                     <RefreshCcw className="w-4 h-4 animate-spin" />
-                    <span>正在渲染处理...</span>
+                    <span>Processing Render</span>
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 fill-current" />
-                    <span>立即生成神作</span>
+                    <span>Generate Masterpiece</span>
                   </>
                 )}
               </div>
@@ -642,7 +638,7 @@ export default function App() {
                      <Upload className="w-8 h-8 text-zinc-300 group-hover:text-white" />
                    </div>
                    <span className="text-[14px] font-black text-zinc-900 mb-1 tracking-wider uppercase">主产品图片</span>
-                   <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase">上传主打产品</p>
+                   <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase">Upload Hero Product</p>
                  </>
                )}
                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
@@ -675,7 +671,7 @@ export default function App() {
                    </div>
                    <span className="text-[14px] font-black text-zinc-900 mb-1 tracking-wider uppercase">灵感参考</span>
                    <p className="text-[10px] text-zinc-400 font-bold tracking-[0.15em] uppercase pl-1">
-                     {mode === 'inspired' ? '导入参考基因' : '当前模式下不可用'}
+                     {mode === 'inspired' ? 'Inject Reference DNA' : 'Inactive in current mode'}
                    </p>
                  </>
                )}
@@ -690,14 +686,14 @@ export default function App() {
                 {isGenerating && (
                    <div className="flex items-center gap-2 px-4 py-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-200">
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
-                      <span className="text-[9px] text-white font-black tracking-widest uppercase">处理中</span>
+                      <span className="text-[9px] text-white font-black tracking-widest uppercase">Processing</span>
                    </div>
                 )}
               </div>
               {results.length > 0 && (
                  <button onClick={downloadAll} className="px-6 py-3 bg-white text-zinc-900 text-[10px] font-black tracking-[0.2em] uppercase rounded-full shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-3">
                    <Download className="w-4 h-4" />
-                   保存图库
+                   Save Gallery
                  </button>
               )}
             </div>
@@ -716,7 +712,7 @@ export default function App() {
                           <ResultCard 
                             key="hero-result"
                             img={results[0]} 
-                            label="主拍视角" 
+                            label="HERO SHOT" 
                             footerLabel="主渲染全景视角" 
                             onPreview={() => setSelectedImage(results[0])} 
                             onDownload={() => handleDownload(results[0].url, 'render-hero.png')} 
@@ -725,7 +721,7 @@ export default function App() {
                         ) : (
                           <LoadingCard 
                             key="hero-loading"
-                            label={step === 1 ? "视觉基因分析" : "正在构思神作"} 
+                            label={step === 1 ? "Vision Analysis" : "Generating Masterpiece"} 
                             loading={isGenerating && results.length < 1} 
                             activeStep={step}
                           />
@@ -744,7 +740,7 @@ export default function App() {
                             <ResultCard 
                               key="detail-result"
                               img={results[1]} 
-                              label="细节视角" 
+                              label="DETAIL VIEW" 
                               footerLabel="氛围细节视角" 
                               onPreview={() => setSelectedImage(results[1])} 
                               onDownload={() => handleDownload(results[1].url, 'render-detail.png')} 
@@ -753,7 +749,7 @@ export default function App() {
                           ) : (
                             <LoadingCard 
                               key="detail-loading"
-                              label={step === 1 ? "场景特征预检" : "正在渲染氛围"} 
+                              label={step === 1 ? "Scene Pre-fetch" : "Crafting Atmosphere"} 
                               loading={isGenerating && results.length < 2} 
                               activeStep={step}
                             />
@@ -770,8 +766,8 @@ export default function App() {
             {history.length > 0 && (
               <div className="mt-32 pt-16 border-t border-zinc-200/50">
                 <div className="flex justify-between items-center mb-10">
-                  <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-zinc-300">历史回顾</h3>
-                  <button onClick={() => setHistory([])} className="text-[9px] uppercase tracking-widest text-zinc-400 hover:text-black transition-colors font-black">清空历史</button>
+                  <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-zinc-300">历史回顾 / Archive</h3>
+                  <button onClick={() => setHistory([])} className="text-[9px] uppercase tracking-widest text-zinc-400 hover:text-black transition-colors font-black">Clear Archive</button>
                 </div>
                 <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6">
                   {history.map((img) => (
@@ -789,12 +785,12 @@ export default function App() {
             )}
 
             {!isGenerating && results.length === 0 && (
-            <div className="flex items-center justify-center opacity-[0.05]">
-              <div className="w-40 h-40 border-2 border-black rounded-full flex items-center justify-center mb-8">
-                <Camera className="w-12 h-12" />
+              <div className="flex-1 min-h-[500px] flex flex-col items-center justify-center opacity-[0.05]">
+                <div className="w-40 h-40 border-2 border-black rounded-full flex items-center justify-center mb-8">
+                  <Camera className="w-12 h-12" />
+                </div>
+                <p className="text-[11px] tracking-[0.8em] uppercase font-black text-black">Ready for Capture</p>
               </div>
-              <p className="text-[11px] tracking-[0.8em] uppercase font-black text-black">准备就绪</p>
-            </div>
             )}
           </section>
         </main>
@@ -812,7 +808,7 @@ export default function App() {
               <AlertCircle className="w-6 h-6 text-red-500 shrink-0" />
               <div>
                 <p className="text-[12px] font-bold leading-relaxed tracking-wide">{error}</p>
-                <button onClick={() => setError(null)} className="mt-4 text-[9px] uppercase tracking-[0.2em] font-black underline opacity-40 hover:opacity-100 transition-opacity">关闭</button>
+                <button onClick={() => setError(null)} className="mt-4 text-[9px] uppercase tracking-[0.2em] font-black underline opacity-40 hover:opacity-100 transition-opacity">Dismiss</button>
               </div>
             </div>
           </motion.div>
@@ -822,9 +818,9 @@ export default function App() {
       <footer className="h-12 px-10 border-t border-zinc-100 flex items-center justify-between text-[9px] uppercase tracking-[0.3em] font-black text-zinc-300 shrink-0 bg-white">
         <div className="flex items-center gap-4">
           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-          引擎同步就绪
+          Engine Synchronized
         </div>
-        <div className="opacity-40">系统发布版本 v3.1</div>
+        <div className="opacity-40">System Release v3.1</div>
       </footer>
 
       {/* Image Preview Modal */}
@@ -864,7 +860,7 @@ export default function App() {
                   className="flex items-center gap-4 px-10 py-5 bg-white text-black text-[11px] uppercase tracking-[0.3em] font-black hover:bg-black hover:text-white transition-all shadow-2xl active:scale-95"
                 >
                   <Download className="w-5 h-5" />
-                  保存高清原图
+                  Save Master File
                 </button>
               </div>
             </motion.div>
@@ -984,7 +980,7 @@ function LoadingCard({ label, loading, activeStep }: { label: string, loading: b
             <div className="flex flex-col gap-1">
               <p className="text-[14px] font-black text-zinc-900 tracking-[0.3em] uppercase">{label}</p>
               <p className="text-[9px] text-zinc-400 font-bold tracking-widest uppercase">
-                {activeStep === 1 ? "映射矢量坐标" : "合成光线质感"}
+                {activeStep === 1 ? "Mapping Vector Coordinates" : "Synthesizing Light Fields"}
               </p>
             </div>
             
