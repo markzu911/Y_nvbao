@@ -118,7 +118,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: uId, toolId: tId }),
       });
-      const json = await res.json();
+      const text = await res.text();
+      if (!text) return;
+      const json = JSON.parse(text);
       if (json.success) {
         setIntegral(json.data?.user?.integral);
       }
@@ -186,11 +188,21 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, contents, config }),
     });
-    if (!res.ok) {
-      const errData = await res.json();
-      throw new Error(errData.error || "Failed to call Gemini API");
+    
+    const text = await res.text();
+    if (!text) throw new Error("服务器返回空响应");
+    
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error("接口返回格式异常");
     }
-    return res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "生成失败，可能是环境过于复杂，请稍后重试");
+    }
+    return data;
   };
 
   const getResponseText = (data: any) => {
@@ -209,7 +221,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, toolId }),
       });
-      const json = await res.json();
+      const text = await res.text();
+      if (!text) throw new Error("校验端口响应异常，请刷新页面");
+      const json = JSON.parse(text);
       if (!json.success) {
         throw new Error(json.message || "积分不足");
       }
@@ -227,12 +241,31 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, toolId }),
       });
-      const json = await res.json();
+      const text = await res.text();
+      if (!text) return;
+      const json = JSON.parse(text);
       if (json.success) {
         setIntegral(json.data?.currentIntegral);
       }
     } catch (err) {
       console.error("Consume credits failed", err);
+    }
+  };
+
+  const uploadResultToSaaS = async (base64Data: string) => {
+    if (!userId) return;
+    try {
+      await fetch("/api/upload/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          base64: base64Data, // This is already prefaced with data:image/png;base64, or just raw base64 depending on how I handle it.
+          source: "result"
+        }),
+      });
+    } catch (err) {
+      console.error("Upload to SaaS failed", err);
     }
   };
 
@@ -368,8 +401,12 @@ export default function App() {
 
       // Step 3 from spec: Consume after success
       // If we reach here, at least one image was generated successfully
-      // For 'model' mode, it will generate 2 images before reaching here due to the loop.
       await consumeCredits();
+
+      // Upload results to SaaS for archival/gallery feature
+      for (const res of newResults) {
+        await uploadResultToSaaS(res.url);
+      }
 
     } catch (err: any) {
       console.error(err);

@@ -41,6 +41,13 @@ app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/lau
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
 
+// Upload & Image Routes
+app.post("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
+app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
+app.get("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.delete("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+
 // Gemini AI Route
 app.post("/api/gemini", async (req, res) => {
   try {
@@ -52,8 +59,8 @@ app.post("/api/gemini", async (req, res) => {
     }
 
     const genAI = new GoogleGenAI({ apiKey });
-    const result = await (genAI as any).models.generateContent({
-      model,
+    const modelInstance = (genAI as any).getGenerativeModel({ model });
+    const result = await modelInstance.generateContent({
       contents,
       generationConfig: config
     });
