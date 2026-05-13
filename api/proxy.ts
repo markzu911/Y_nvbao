@@ -1,6 +1,6 @@
 import express from "express";
 import axios from "axios";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import path from "path";
 
 const app = express();
@@ -58,14 +58,15 @@ app.post("/api/gemini", async (req, res) => {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
     }
 
-    const genAI = new GoogleGenAI({ apiKey });
-    const modelInstance = (genAI as any).getGenerativeModel({ model });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const modelInstance = genAI.getGenerativeModel({ model });
     const result = await modelInstance.generateContent({
       contents,
       generationConfig: config
     });
 
     const response = await result.response;
+    // Ensure we return a plain JSON object
     res.json(response);
   } catch (error: any) {
     console.error("Gemini Server Error:", error.message);
