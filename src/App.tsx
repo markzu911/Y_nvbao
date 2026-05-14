@@ -358,27 +358,20 @@ export default function App() {
           // SaaS Consume and Upload for each generated image
           if (userId && toolId) {
             try {
-              // Deduct points
-              const consumeRes = await fetch(SAAS_API.consume, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, toolId })
-              });
-              const consumeData = await consumeRes.json();
-              if (consumeData.success) {
-                setUserIntegral(consumeData.data.currentIntegral);
-              }
-
-              // Upload to record
-              await fetch(SAAS_API.upload, {
+              // Now handled in one server-side spec-compliant call
+              const uploadRes = await fetch(SAAS_API.upload, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   userId,
-                  source: 'result',
+                  toolId,
                   base64: `data:image/png;base64,${imagePart.inlineData.data}`
                 })
               });
+              const uploadData = await uploadRes.json();
+              if (uploadData.success && uploadData.image?.currentIntegral !== undefined) {
+                setUserIntegral(uploadData.image.currentIntegral);
+              }
             } catch (saasErr) {
               console.error('SaaS Operation Error:', saasErr);
             }

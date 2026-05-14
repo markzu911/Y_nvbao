@@ -2,6 +2,7 @@ import express from "express";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import sharp from "sharp";
 
 dotenv.config();
 
@@ -48,6 +49,79 @@ app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/co
 // Upload & Commit Routes (Strictly matching the spec)
 app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
 app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
+
+// Spec-compliant Save Function (Server-side)
+async function saveToSaas(userId: string, toolId: string, base64Data: string) {
+  try {
+    const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    let imageBuffer = Buffer.from(base64, 'base64');
+    
+    // Spec Point 6: Normalize result image
+    imageBuffer = await sharp(imageBuffer)
+      .resize({
+        width: 3072, 
+        height: 3072, 
+        fit: 'inside', 
+        withoutEnlargement: true 
+      })
+      .toBuffer();
+
+    const mimeType = 'image/png';
+    const fileName = `render_${Date.now()}.png`;
+
+    // 1. Consume
+    const consumeRes = await axios.post(`${SAAS_TARGET}/api/tool/consume`, { userId, toolId });
+    const consumeInfo = consumeRes.data.data || consumeRes.data;
+    const currentIntegral = consumeInfo.currentIntegral;
+
+    // 2. Direct Token
+    const tokenRes = await axios.post(`${SAAS_TARGET}/api/upload/direct-token`, {
+      userId,
+      toolId,
+      source: 'result',
+      mimeType,
+      fileName,
+      fileSize: imageBuffer.length
+    });
+    const token = tokenRes.data.data || tokenRes.data;
+
+    // 3. PUT to OSS
+    await axios.put(token.uploadUrl, imageBuffer, {
+      headers: { ...token.headers, 'Content-Type': mimeType }
+    });
+
+    // 4. Commit
+    const commitRes = await axios.post(`${SAAS_TARGET}/api/upload/commit`, {
+      userId,
+      toolId,
+      source: 'result',
+      objectKey: token.objectKey,
+      fileSize: imageBuffer.length
+    });
+
+    const commitInfo = commitRes.data.image || commitRes.data;
+    return { ...commitInfo, currentIntegral };
+  } catch (err: any) {
+    console.error("Save to SaaS Failed:", err.response?.data || err.message);
+    throw err;
+  }
+}
+
+// Dedicated endpoint for frontend to call, ensuring server-side handling
+app.post("/api/upload/image", async (req, res) => {
+  const { userId, toolId, base64 } = req.body;
+  
+  if (!userId || !toolId || !base64) {
+    return res.status(400).json({ error: "Missing required fields (userId, toolId, base64)" });
+  }
+
+  try {
+    const imageData = await saveToSaas(userId, toolId, base64);
+    res.json({ success: true, image: imageData });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to save image to SaaS" });
+  }
+});
 
 // Gemini Proxy Route
 app.post("/api/gemini", async (req, res) => {
