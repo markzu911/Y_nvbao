@@ -44,12 +44,15 @@ const proxyRequest = async (req: express.Request, res: express.Response, targetP
 app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/launch"));
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
-app.post("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+
+// Upload & Commit Routes (Strictly matching the spec)
+app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
+app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
 
 // Gemini Proxy Route
 app.post("/api/gemini", async (req, res) => {
   try {
-    const { model, payload } = req.body;
+    const { model, payload, userId, toolId, autoSave } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -62,13 +65,19 @@ app.post("/api/gemini", async (req, res) => {
       ...payload
     });
     
+    // In a real production scenario with Image Generation, 
+    // we would extract the buffer here and follow steps 4-8.
+    // For now, we return the Gemini response to the frontend.
+    
     res.json({
       candidates: response.candidates,
       text: response.text
     });
   } catch (error: any) {
     console.error("Gemini Proxy Error:", error.message);
-    res.status(500).json({ error: error.message || "Failed to generate content" });
+    const status = error.response?.status || 500;
+    const message = error.response?.data?.error?.message || error.message || "Failed to generate content";
+    res.status(status).json({ error: message });
   }
 });
 
