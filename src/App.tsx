@@ -240,7 +240,7 @@ export default function App() {
         const res = await fetch("/api/gemini", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, payload }),
+          body: JSON.stringify({ model, payload, resolution: resolution.id }),
         });
         if (!res.ok) {
           const err = await res.json();

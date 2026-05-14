@@ -126,7 +126,7 @@ app.post("/api/upload/image", async (req, res) => {
 // Gemini Proxy Route
 app.post("/api/gemini", async (req, res) => {
   try {
-    const { model, payload, userId, toolId, autoSave } = req.body;
+    const { model, payload, userId, toolId, resolution } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -139,9 +139,31 @@ app.post("/api/gemini", async (req, res) => {
       ...payload
     });
     
-    // In a real production scenario with Image Generation, 
-    // we would extract the buffer here and follow steps 4-8.
-    // For now, we return the Gemini response to the frontend.
+    // Process generated images if any
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          let buffer = Buffer.from(part.inlineData.data, 'base64');
+          
+          // Determine target size based on resolution
+          let targetSize = 3072; // Default 3K
+          if (resolution === '1K') targetSize = 1024;
+          else if (resolution === '2K') targetSize = 2048;
+          else if (resolution === '4K') targetSize = 4096;
+
+          buffer = await sharp(buffer)
+            .resize({
+              width: targetSize,
+              height: targetSize,
+              fit: 'inside',
+              withoutEnlargement: true
+            })
+            .toBuffer();
+          
+          part.inlineData.data = buffer.toString('base64');
+        }
+      }
+    }
     
     res.json({
       candidates: response.candidates,
