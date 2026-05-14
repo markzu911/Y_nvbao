@@ -338,10 +338,11 @@ export default function App() {
               ]
             }
           ],
-          generationConfig: {
-            // @ts-ignore - backend specific config if needed, otherwise passes through
-            // Note: aspect ratio is usually model dependent in generateContent of some newer models
-            // but for standard models we might need a specific structure
+          config: {
+            imageConfig: {
+              aspectRatio: ratio.id,
+              imageSize: resolution.id
+            }
           }
         });
 
