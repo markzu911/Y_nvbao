@@ -55,12 +55,17 @@ async function saveToSaas(userId: string, toolId: string, imageBuffer: Buffer) {
     const mimeType = 'image/png';
     const fileName = `render_${Date.now()}.png`;
 
+    console.log(`[saveToSaas] Starting SaaS save flow for User ID: ${userId}, Tool ID: ${toolId}, File size: ${imageBuffer.length} bytes`);
+
     // 1. Consume
+    console.log(`[saveToSaas Step 1] Calling /api/tool/consume`);
     const consumeRes = await axios.post(`${SAAS_TARGET}/api/tool/consume`, { userId, toolId });
+    console.log(`[saveToSaas Step 1] /api/tool/consume response:`, JSON.stringify(consumeRes.data));
     const consumeInfo = consumeRes.data.data || consumeRes.data;
     const currentIntegral = consumeInfo.currentIntegral;
 
     // 2. Direct Token
+    console.log(`[saveToSaas Step 2] Calling /api/upload/direct-token`);
     const tokenRes = await axios.post(`${SAAS_TARGET}/api/upload/direct-token`, {
       userId,
       toolId,
@@ -69,14 +74,18 @@ async function saveToSaas(userId: string, toolId: string, imageBuffer: Buffer) {
       fileName,
       fileSize: imageBuffer.length
     });
+    console.log(`[saveToSaas Step 2] /api/upload/direct-token response:`, JSON.stringify(tokenRes.data));
     const token = tokenRes.data.data || tokenRes.data;
 
     // 3. PUT to OSS
-    await axios.put(token.uploadUrl, imageBuffer, {
+    console.log(`[saveToSaas Step 3] Uploading to OSS via direct PUT to ${token.uploadUrl}`);
+    const uploadRes = await axios.put(token.uploadUrl, imageBuffer, {
       headers: { ...token.headers, 'Content-Type': mimeType }
     });
+    console.log(`[saveToSaas Step 3] OSS PUT response status:`, uploadRes.status);
 
     // 4. Commit
+    console.log(`[saveToSaas Step 4] Calling /api/upload/commit with objectKey: ${token.objectKey}`);
     const commitRes = await axios.post(`${SAAS_TARGET}/api/upload/commit`, {
       userId,
       toolId,
@@ -84,11 +93,13 @@ async function saveToSaas(userId: string, toolId: string, imageBuffer: Buffer) {
       objectKey: token.objectKey,
       fileSize: imageBuffer.length
     });
+    console.log(`[saveToSaas Step 4] /api/upload/commit response:`, JSON.stringify(commitRes.data));
 
     const commitInfo = commitRes.data.image || commitRes.data;
+    console.log(`[saveToSaas] Flow completed successfully!`);
     return { ...commitInfo, currentIntegral };
   } catch (err: any) {
-    console.error("Save to SaaS Failed:", err.response?.data || err.message);
+    console.error(`[saveToSaas Error] Flow failed. error response:`, err.response?.data || err.message);
     throw err;
   }
 }
