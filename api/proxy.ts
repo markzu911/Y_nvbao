@@ -50,11 +50,8 @@ app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/
 app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
 
 // Spec-compliant Save Function (Server-side)
-async function saveToSaas(userId: string, toolId: string, base64Data: string) {
+async function saveToSaas(userId: string, toolId: string, imageBuffer: Buffer) {
   try {
-    const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const imageBuffer = Buffer.from(base64, 'base64');
-    
     const mimeType = 'image/png';
     const fileName = `render_${Date.now()}.png`;
 
@@ -96,22 +93,6 @@ async function saveToSaas(userId: string, toolId: string, base64Data: string) {
   }
 }
 
-// Dedicated endpoint for frontend to call, ensuring server-side handling
-app.post("/api/upload/image", async (req, res) => {
-  const { userId, toolId, base64 } = req.body;
-  
-  if (!userId || !toolId || !base64) {
-    return res.status(400).json({ error: "Missing required fields (userId, toolId, base64)" });
-  }
-
-  try {
-    const imageData = await saveToSaas(userId, toolId, base64);
-    res.json({ success: true, image: imageData });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Failed to save image to SaaS" });
-  }
-});
-
 // Gemini Proxy Route
 app.post("/api/gemini", async (req, res) => {
   try {
@@ -129,10 +110,21 @@ app.post("/api/gemini", async (req, res) => {
     });
     
     // Process generated images if any
-    if (response.candidates?.[0]?.content?.parts) {
+    if (response.candidates?.[0]?.content?.parts && userId && toolId) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          // No compression or resizing, original data is passed through
+          const buffer = Buffer.from(part.inlineData.data, 'base64');
+          try {
+            // Upload to SAAS directly on the server
+            const imageInfo = await saveToSaas(userId, toolId, buffer);
+            
+            // Output SaaS URLs so frontend can use it directly
+            part.inlineData = undefined;
+            (part as any).saasImage = imageInfo;
+          } catch (saasErr) {
+            console.error("Failed to upload generated image to SaaS OSS:", saasErr);
+            throw saasErr;
+          }
         }
       }
     }

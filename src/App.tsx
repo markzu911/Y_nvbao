@@ -347,36 +347,28 @@ export default function App() {
         });
 
         // The backend returns { candidates, text }
-        const imagePart = response.candidates?.[0]?.content?.parts.find((p: any) => p.inlineData);
-        if (imagePart?.inlineData) {
-          newResults.push({
-            id: `gen-${i}-${Date.now()}`,
-            url: `data:image/png;base64,${imagePart.inlineData.data}`,
-            title: config.title
-          });
-          setResults([...newResults]);
-
-          // SaaS Consume and Upload for each generated image
-          if (userId && toolId) {
-            try {
-              // Now handled in one server-side spec-compliant call
-              const uploadRes = await fetch(SAAS_API.upload, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userId,
-                  toolId,
-                  base64: `data:image/png;base64,${imagePart.inlineData.data}`
-                })
-              });
-              const uploadData = await uploadRes.json();
-              if (uploadData.success && uploadData.image?.currentIntegral !== undefined) {
-                setUserIntegral(uploadData.image.currentIntegral);
-              }
-            } catch (saasErr) {
-              console.error('SaaS Operation Error:', saasErr);
+        // The inlineData might be replaced by saasImage on the backend
+        const imagePart = response.candidates?.[0]?.content?.parts.find((p: any) => p.saasImage || p.inlineData);
+        if (imagePart) {
+          if (imagePart.saasImage) {
+            // When uploaded to SaaS directly from our backend
+            newResults.push({
+              id: imagePart.saasImage.recordId || `gen-${i}-${Date.now()}`,
+              url: imagePart.saasImage.url,
+              title: config.title
+            });
+            if (imagePart.saasImage.currentIntegral !== undefined) {
+              setUserIntegral(imagePart.saasImage.currentIntegral);
             }
+          } else if (imagePart.inlineData) {
+            // Fallback if not configured for SaaS (no userId/toolId)
+            newResults.push({
+              id: `gen-${i}-${Date.now()}`,
+              url: `data:image/png;base64,${imagePart.inlineData.data}`,
+              title: config.title
+            });
           }
+          setResults([...newResults]);
         }
       }
 
