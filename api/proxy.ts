@@ -2,7 +2,6 @@ import express from "express";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import sharp from "sharp";
 
 dotenv.config();
 
@@ -54,18 +53,8 @@ app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload
 async function saveToSaas(userId: string, toolId: string, base64Data: string) {
   try {
     const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    let imageBuffer = Buffer.from(base64, 'base64');
+    const imageBuffer = Buffer.from(base64, 'base64');
     
-    // Spec Point 6: Normalize result image
-    imageBuffer = await sharp(imageBuffer)
-      .resize({
-        width: 3072, 
-        height: 3072, 
-        fit: 'inside', 
-        withoutEnlargement: true 
-      })
-      .toBuffer();
-
     const mimeType = 'image/png';
     const fileName = `render_${Date.now()}.png`;
 
@@ -143,24 +132,7 @@ app.post("/api/gemini", async (req, res) => {
     if (response.candidates?.[0]?.content?.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          let buffer = Buffer.from(part.inlineData.data, 'base64');
-          
-          // Determine target size based on resolution
-          let targetSize = 3072; // Default 3K
-          if (resolution === '1K') targetSize = 1024;
-          else if (resolution === '2K') targetSize = 2048;
-          else if (resolution === '4K') targetSize = 4096;
-
-          buffer = await sharp(buffer)
-            .resize({
-              width: targetSize,
-              height: targetSize,
-              fit: 'inside',
-              withoutEnlargement: true
-            })
-            .toBuffer();
-          
-          part.inlineData.data = buffer.toString('base64');
+          // No compression or resizing, original data is passed through
         }
       }
     }
