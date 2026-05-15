@@ -28,8 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 const SAAS_API = {
   launch: '/api/tool/launch',
   verify: '/api/tool/verify',
-  consume: '/api/tool/consume',
-  upload: '/api/upload/image',
+  consume: '/api/tool/consume'
 };
 
 // Constants
@@ -240,11 +239,17 @@ export default function App() {
         const res = await fetch("/api/gemini", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, payload, resolution: resolution.id }),
+          body: JSON.stringify({ 
+            model, 
+            payload, 
+            resolution: resolution.id,
+            userId,
+            toolId
+          }),
         });
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Generation failed");
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Generation failed");
         }
         return res.json();
       };

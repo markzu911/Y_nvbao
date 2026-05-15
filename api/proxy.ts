@@ -50,58 +50,53 @@ app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/
 app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
 
 // Spec-compliant Save Function (Server-side)
-async function saveToSaas(userId: string, toolId: string, imageBuffer: Buffer) {
-  try {
-    const mimeType = 'image/png';
-    const fileName = `render_${Date.now()}.png`;
+async function uploadResultToSaas(userId: string, toolId: string, imageBuffer: Buffer, index = 0) {
+  const mimeType = "image/png";
+  const fileName = `bag_result_${Date.now()}_${index}.png`;
 
-    console.log(`[saveToSaas] Starting SaaS save flow for User ID: ${userId}, Tool ID: ${toolId}, File size: ${imageBuffer.length} bytes`);
+  const tokenRes = await axios.post(`${SAAS_TARGET}/api/upload/direct-token`, {
+    userId,
+    toolId,
+    source: "result",
+    mimeType,
+    fileName,
+    fileSize: imageBuffer.length
+  }, { validateStatus: () => true });
 
-    // 1. Consume
-    console.log(`[saveToSaas Step 1] Calling /api/tool/consume`);
-    const consumeRes = await axios.post(`${SAAS_TARGET}/api/tool/consume`, { userId, toolId });
-    console.log(`[saveToSaas Step 1] /api/tool/consume response:`, JSON.stringify(consumeRes.data));
-    const consumeInfo = consumeRes.data.data || consumeRes.data;
-    const currentIntegral = consumeInfo.currentIntegral;
-
-    // 2. Direct Token
-    console.log(`[saveToSaas Step 2] Calling /api/upload/direct-token`);
-    const tokenRes = await axios.post(`${SAAS_TARGET}/api/upload/direct-token`, {
-      userId,
-      toolId,
-      source: 'result',
-      mimeType,
-      fileName,
-      fileSize: imageBuffer.length
-    });
-    console.log(`[saveToSaas Step 2] /api/upload/direct-token response:`, JSON.stringify(tokenRes.data));
-    const token = tokenRes.data.data || tokenRes.data;
-
-    // 3. PUT to OSS
-    console.log(`[saveToSaas Step 3] Uploading to OSS via direct PUT to ${token.uploadUrl}`);
-    const uploadRes = await axios.put(token.uploadUrl, imageBuffer, {
-      headers: { ...token.headers, 'Content-Type': mimeType }
-    });
-    console.log(`[saveToSaas Step 3] OSS PUT response status:`, uploadRes.status);
-
-    // 4. Commit
-    console.log(`[saveToSaas Step 4] Calling /api/upload/commit with objectKey: ${token.objectKey}`);
-    const commitRes = await axios.post(`${SAAS_TARGET}/api/upload/commit`, {
-      userId,
-      toolId,
-      source: 'result',
-      objectKey: token.objectKey,
-      fileSize: imageBuffer.length
-    });
-    console.log(`[saveToSaas Step 4] /api/upload/commit response:`, JSON.stringify(commitRes.data));
-
-    const commitInfo = commitRes.data.image || commitRes.data;
-    console.log(`[saveToSaas] Flow completed successfully!`);
-    return { ...commitInfo, currentIntegral };
-  } catch (err: any) {
-    console.error(`[saveToSaas Error] Flow failed. error response:`, err.response?.data || err.message);
-    throw err;
+  const token = tokenRes.data.data || tokenRes.data;
+  if (!token?.success) {
+    throw new Error(token?.message || token?.error || "获取上传凭证失败");
   }
+
+  const uploadRes = await axios.put(token.uploadUrl || token.ossUploadUrl, imageBuffer, {
+    headers: { ...(token.headers || {}), "Content-Type": mimeType },
+    validateStatus: () => true
+  });
+
+  if (uploadRes.status < 200 || uploadRes.status >= 300) {
+    throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+  }
+
+  const commitRes = await axios.post(`${SAAS_TARGET}/api/upload/commit`, {
+    userId,
+    toolId,
+    source: "result",
+    objectKey: token.objectKey,
+    fileSize: imageBuffer.length
+  }, { validateStatus: () => true });
+
+  const commit = commitRes.data;
+  if (!commit?.success && !commit?.savedToRecords && !commit?.image?.savedToRecords) {
+    throw new Error(commit?.message || commit?.error || "图片入库失败");
+  }
+
+  return commit.image || {
+    recordId: commit.recordId,
+    url: commit.url,
+    fileName: commit.fileName,
+    fileSize: imageBuffer.length,
+    savedToRecords: commit.savedToRecords
+  };
 }
 
 // Gemini Proxy Route
@@ -121,21 +116,37 @@ app.post("/api/gemini", async (req, res) => {
     });
     
     // Process generated images if any
-    if (response.candidates?.[0]?.content?.parts && userId && toolId) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const buffer = Buffer.from(part.inlineData.data, 'base64');
-          try {
-            // Upload to SAAS directly on the server
-            const imageInfo = await saveToSaas(userId, toolId, buffer);
-            
-            // Output SaaS URLs so frontend can use it directly
-            part.inlineData = undefined;
-            (part as any).saasImage = imageInfo;
-          } catch (saasErr) {
-            console.error("Failed to upload generated image to SaaS OSS:", saasErr);
-            throw saasErr;
-          }
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    const generatedImageParts = parts.filter((part: any) => part.inlineData?.data);
+
+    if (userId && toolId && generatedImageParts.length > 0) {
+      const consumeRes = await axios.post(`${SAAS_TARGET}/api/tool/consume`, {
+        userId,
+        toolId
+      }, { validateStatus: () => true });
+
+      const consume = consumeRes.data;
+      if (!consume?.success) {
+        throw new Error(consume?.message || consume?.error || "积分扣除失败");
+      }
+
+      const currentIntegral = consume.data?.currentIntegral;
+
+      for (let i = 0; i < generatedImageParts.length; i++) {
+        const part: any = generatedImageParts[i];
+        const imageBuffer = Buffer.from(part.inlineData.data, "base64");
+        
+        try {
+          const imageInfo = await uploadResultToSaas(userId, toolId, imageBuffer, i);
+
+          part.inlineData = undefined;
+          part.saasImage = {
+            ...imageInfo,
+            currentIntegral
+          };
+        } catch (saasErr) {
+          console.error("Failed to upload generated image to SaaS OSS:", saasErr);
+          throw saasErr;
         }
       }
     }
@@ -145,7 +156,7 @@ app.post("/api/gemini", async (req, res) => {
       text: response.text
     });
   } catch (error: any) {
-    console.error("Gemini Proxy Error:", error.message);
+    console.error("Gemini Proxy Error:", error.response?.data || error.message);
     const status = error.response?.status || 500;
     const message = error.response?.data?.error?.message || error.message || "Failed to generate content";
     res.status(status).json({ error: message });
