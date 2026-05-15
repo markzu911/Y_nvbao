@@ -49,60 +49,10 @@ app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/co
 app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
 app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
 
-// Spec-compliant Save Function (Server-side)
-async function uploadResultToSaas(userId: string, toolId: string, imageBuffer: Buffer, index = 0) {
-  const mimeType = "image/png";
-  const fileName = `bag_result_${Date.now()}_${index}.png`;
-
-  const tokenRes = await axios.post(`${SAAS_TARGET}/api/upload/direct-token`, {
-    userId,
-    toolId,
-    source: "result",
-    mimeType,
-    fileName,
-    fileSize: imageBuffer.length
-  }, { validateStatus: () => true });
-
-  const token = tokenRes.data.data || tokenRes.data;
-  if (!token?.success) {
-    throw new Error(token?.message || token?.error || "获取上传凭证失败");
-  }
-
-  const uploadRes = await axios.put(token.uploadUrl || token.ossUploadUrl, imageBuffer, {
-    headers: { ...(token.headers || {}), "Content-Type": mimeType },
-    validateStatus: () => true
-  });
-
-  if (uploadRes.status < 200 || uploadRes.status >= 300) {
-    throw new Error(`OSS 上传失败: ${uploadRes.status}`);
-  }
-
-  const commitRes = await axios.post(`${SAAS_TARGET}/api/upload/commit`, {
-    userId,
-    toolId,
-    source: "result",
-    objectKey: token.objectKey,
-    fileSize: imageBuffer.length
-  }, { validateStatus: () => true });
-
-  const commit = commitRes.data;
-  if (!commit?.success && !commit?.savedToRecords && !commit?.image?.savedToRecords) {
-    throw new Error(commit?.message || commit?.error || "图片入库失败");
-  }
-
-  return commit.image || {
-    recordId: commit.recordId,
-    url: commit.url,
-    fileName: commit.fileName,
-    fileSize: imageBuffer.length,
-    savedToRecords: commit.savedToRecords
-  };
-}
-
 // Gemini Proxy Route
 app.post("/api/gemini", async (req, res) => {
   try {
-    const { model, payload, userId, toolId, resolution } = req.body;
+    const { model, payload, resolution } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -114,42 +64,6 @@ app.post("/api/gemini", async (req, res) => {
       model,
       ...payload
     });
-    
-    // Process generated images if any
-    const parts = response.candidates?.[0]?.content?.parts || [];
-    const generatedImageParts = parts.filter((part: any) => part.inlineData?.data);
-
-    if (userId && toolId && generatedImageParts.length > 0) {
-      const consumeRes = await axios.post(`${SAAS_TARGET}/api/tool/consume`, {
-        userId,
-        toolId
-      }, { validateStatus: () => true });
-
-      const consume = consumeRes.data;
-      if (!consume?.success) {
-        throw new Error(consume?.message || consume?.error || "积分扣除失败");
-      }
-
-      const currentIntegral = consume.data?.currentIntegral;
-
-      for (let i = 0; i < generatedImageParts.length; i++) {
-        const part: any = generatedImageParts[i];
-        const imageBuffer = Buffer.from(part.inlineData.data, "base64");
-        
-        try {
-          const imageInfo = await uploadResultToSaas(userId, toolId, imageBuffer, i);
-
-          part.inlineData = undefined;
-          part.saasImage = {
-            ...imageInfo,
-            currentIntegral
-          };
-        } catch (saasErr) {
-          console.error("Failed to upload generated image to SaaS OSS:", saasErr);
-          throw saasErr;
-        }
-      }
-    }
     
     res.json({
       candidates: response.candidates,

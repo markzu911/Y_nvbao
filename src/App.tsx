@@ -28,7 +28,9 @@ import { motion, AnimatePresence } from 'motion/react';
 const SAAS_API = {
   launch: '/api/tool/launch',
   verify: '/api/tool/verify',
-  consume: '/api/tool/consume'
+  consume: '/api/tool/consume',
+  directToken: '/api/upload/direct-token',
+  commit: '/api/upload/commit'
 };
 
 // Constants
@@ -67,6 +69,121 @@ const STILL_LIFE_STYLES = [
   { id: 'natural_branch', name: '自然意境', prompt: 'NATURAL ZEN COMPOSITION: The hero bag is artistically balanced on a weathered organic wooden branch. Background: A warm apricot-toned studio background. ENHANCEMENT: Small, smooth river pebbles and a few stalks of pampas grass are arranged near the base of the branch. A thin silk ribbon in a matching earth tone is draped elegantly over one side of the branch. LIGHTING: Soft, cinematic side-lighting with long organic shadows.' },
   { id: 'cozy_lifestyle', name: '家居闲适', prompt: 'COZY LIFESTYLE REPLICA: The hero bag is placed on soft, crumpled white linen fabric. Background: Neutral warm-grey wall. ENHANCEMENT: A pair of high-end oversized designer sunglasses and an open luxury fashion magazine are lying naturally near the bag, as if just set down. A soft, warm morning sunbeam casts the shadow of a Monstera leaf across the scene. Style: Clean and airy lifestyle aesthetic.' },
 ];
+
+function base64ToBlob(dataUrl: string): Blob {
+  const [header, data] = dataUrl.split(",");
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/png";
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadResultImageToSaas(
+  userId: string,
+  toolId: string,
+  imageDataUrl: string,
+  index: number
+) {
+  const blob = base64ToBlob(imageDataUrl);
+  const fileName = `bag_result_${Date.now()}_${index}.png`;
+
+  const tokenRes = await fetch(SAAS_API.directToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      toolId,
+      source: "result",
+      mimeType: blob.type,
+      fileName,
+      fileSize: blob.size
+    })
+  });
+
+  const token = await tokenRes.json();
+  if (!tokenRes.ok || !token.success) {
+    throw new Error(token.message || token.error || "获取上传凭证失败");
+  }
+
+  const uploadUrl = token.uploadUrl || token.ossUploadUrl;
+  const ossRes = await fetch(uploadUrl, {
+    method: token.method || "PUT",
+    headers: {
+      ...(token.headers || {}),
+      "Content-Type": blob.type
+    },
+    body: blob
+  });
+
+  if (!ossRes.ok) {
+    throw new Error(`OSS 上传失败: ${ossRes.status}`);
+  }
+
+  const commitRes = await fetch(SAAS_API.commit, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      toolId,
+      source: "result",
+      objectKey: token.objectKey,
+      fileSize: blob.size
+    })
+  });
+
+  const commit = await commitRes.json();
+  if (!commitRes.ok || (!commit.success && !commit.savedToRecords && !commit.image?.savedToRecords)) {
+    throw new Error(commit.message || commit.error || "图片入库失败");
+  }
+
+  return commit.image || {
+    recordId: commit.recordId,
+    url: commit.url,
+    fileName: commit.fileName,
+    fileSize: blob.size,
+    savedToRecords: commit.savedToRecords
+  };
+}
+
+const optimizeImage = (file: File, maxWidth = 2048, quality = 0.85): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve((canvas.toDataURL("image/jpeg", quality) as string).split(',')[1]);
+        } else {
+          resolve((e.target?.result as string).split(',')[1]);
+        }
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 // Types
 interface GeneratedImage {
@@ -229,8 +346,8 @@ export default function App() {
         }
       }
 
-      const base64Image = await fileToBase64(file);
-      const base64Ref = refFile ? await fileToBase64(refFile) : null;
+      const base64Image = await optimizeImage(file);
+      const base64Ref = refFile ? await optimizeImage(refFile) : null;
 
       // Step 1: Deep Analysis of the product to ensure 1:1 fidelity
       setStep(1);
@@ -242,9 +359,7 @@ export default function App() {
           body: JSON.stringify({ 
             model, 
             payload, 
-            resolution: resolution.id,
-            userId,
-            toolId
+            resolution: resolution.id
           }),
         });
         if (!res.ok) {
@@ -258,7 +373,7 @@ export default function App() {
         generateContent("gemini-3.1-flash-image-preview", {
           contents: [
             { parts: [
-              { inlineData: { data: base64Image, mimeType: file.type } },
+              { inlineData: { data: base64Image, mimeType: 'image/jpeg' } },
               { text: "Identity Analysis: Describe this bag with fanatical detail so a generator can clone it. 1. Precise Geometry (box height-width ratio, edge curvature); 2. Material DNA (exact texture, grain size, sheen level); 3. Hardware Signature (exact count and placement of rivets, shape of pulls); 4. Logo Typography and Scale. Output in English technical terms." }
             ]}
           ]
@@ -266,7 +381,7 @@ export default function App() {
         (mode === 'inspired' && base64Ref) ? generateContent("gemini-3.1-flash-image-preview", {
           contents: [
             { parts: [
-              { inlineData: { data: base64Ref, mimeType: refFile!.type } },
+              { inlineData: { data: base64Ref, mimeType: 'image/jpeg' } },
               { text: "Detailed Visual Analysis: Analyze this reference image. Describe in one technical paragraph: 1. The Environment (architecture, lighting, color palette); 2. HUMAN ELEMENTS (If a person is present, specify their exact outfit, pose, orientation, and action); 3. Compositional layout. The goal is to replicate these elements exactly in a new generation." }
             ]}
           ]
@@ -326,11 +441,11 @@ export default function App() {
         const config = imageConfigs[i];
         
         const contentParts: any[] = [
-          { inlineData: { data: base64Image, mimeType: file.type } }
+          { inlineData: { data: base64Image, mimeType: 'image/jpeg' } }
         ];
 
         if (mode === 'inspired' && base64Ref) {
-          contentParts.push({ inlineData: { data: base64Ref, mimeType: refFile!.type } });
+          contentParts.push({ inlineData: { data: base64Ref, mimeType: 'image/jpeg' } });
         }
 
         const response = await generateContent('gemini-3.1-flash-image-preview', {
@@ -352,33 +467,58 @@ export default function App() {
         });
 
         // The backend returns { candidates, text }
-        // The inlineData might be replaced by saasImage on the backend
-        const imagePart = response.candidates?.[0]?.content?.parts.find((p: any) => p.saasImage || p.inlineData);
-        if (imagePart) {
-          if (imagePart.saasImage) {
-            // When uploaded to SaaS directly from our backend
-            newResults.push({
-              id: imagePart.saasImage.recordId || `gen-${i}-${Date.now()}`,
-              url: imagePart.saasImage.url,
-              title: config.title
-            });
-            if (imagePart.saasImage.currentIntegral !== undefined) {
-              setUserIntegral(imagePart.saasImage.currentIntegral);
-            }
-          } else if (imagePart.inlineData) {
-            // Fallback if not configured for SaaS (no userId/toolId)
-            newResults.push({
-              id: `gen-${i}-${Date.now()}`,
-              url: `data:image/png;base64,${imagePart.inlineData.data}`,
-              title: config.title
-            });
-          }
+        const imagePart = response.candidates?.[0]?.content?.parts.find((p: any) => p.inlineData);
+        if (imagePart?.inlineData) {
+          const generatedDataUrl = `data:${imagePart.inlineData.mimeType || "image/png"};base64,${imagePart.inlineData.data}`;
+          newResults.push({
+            id: `gen-${i}-${Date.now()}`,
+            url: generatedDataUrl,
+            title: config.title
+          });
           setResults([...newResults]);
         }
       }
 
       if (newResults.length === 0) {
         throw new Error("生成失败，请检查网络或重试");
+      }
+
+      if (userId && toolId) {
+        const consumeRes = await fetch(SAAS_API.consume, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, toolId })
+        });
+
+        const consume = await consumeRes.json();
+        if (!consumeRes.ok || !consume.success) {
+          throw new Error(consume.message || consume.error || "积分扣除失败");
+        }
+
+        if (consume.data?.currentIntegral !== undefined) {
+          setUserIntegral(consume.data.currentIntegral);
+        }
+
+        const savedResults = [];
+        for (let i = 0; i < newResults.length; i++) {
+          try {
+            const savedImage = await uploadResultImageToSaas(userId, toolId, newResults[i].url, i);
+            savedResults.push({
+              ...newResults[i],
+              id: savedImage.recordId || newResults[i].id,
+              url: savedImage.url || newResults[i].url
+            });
+            setResults([...savedResults]);
+          } catch (uploadErr: any) {
+            console.error("Upload Error:", uploadErr);
+            setError(`部分图片保存失败: ${uploadErr.message}`);
+            savedResults.push(newResults[i]);
+            setResults([...savedResults]);
+          }
+        }
+        setResults(savedResults);
+      } else {
+        setResults(newResults);
       }
 
     } catch (err: any) {
